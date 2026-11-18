@@ -23,9 +23,11 @@ langsung di web lewat ikon pensil di samping nama.
 
 ## Fitur
 
-- Navigasi minggu (Sebelumnya / Minggu ini / Berikutnya) + ringkasan Senin–Sabtu
-- Progress peserta yang sudah memilih
-- Daftar Libur & Masuk untuk Jumat dan Sabtu; label **Jadwal final** saat semua sudah memilih
+- Navigasi minggu berupa tautan teks (Sebelumnya / Minggu ini / Berikutnya)
+- Grid jadwal mingguan: baris peserta, kolom Senin–Sabtu; sel LIBUR (blok tinta),
+  MASUK, atau PILIH — semua bermono-spasi
+- Daftar Libur & Masuk untuk Jumat dan Sabtu dalam bentuk daftar teks; status
+  **Jadwal final** saat semua sudah memilih
 - Tombol **Roll Minggu Ini** (acak seimbang per divisi, menghormati aturan selang-seling)
 - Tombol **Export PDF** — memakai `window.print()` + stylesheet `@media print`,
   hasil cetaknya hanya berisi kop, rentang minggu, daftar libur/masuk, dan tabel rincian
@@ -58,6 +60,6 @@ npm start
 
 ## Teknologi
 
-Next.js 14 (App Router) · React 18 · TypeScript · Tailwind CSS · desain mengikuti
-design system Meta (canvas putih, kartu rounded 32px, tombol pill, cobalt `#0064E0`
-hanya untuk CTA Roll, font Montserrat).
+Next.js 14 (App Router) · React 18 · TypeScript · Tailwind CSS · desain lembar
+roster cetak yang tipografis (garis hairline, tanpa kartu/avatar/chip warna,
+font IBM Plex Sans + IBM Plex Mono).
