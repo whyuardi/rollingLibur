@@ -16,6 +16,7 @@ import {
   type Participant,
 } from "../lib/schedule";
 import {
+  clearOffDay,
   clearWeek,
   loadBoard,
   renameParticipant,
@@ -87,6 +88,26 @@ export default function Home() {
     } catch {
       // Gagal simpan ke Supabase: tampilan minggu ini tetap, tapi
       // perubahan bisa hilang saat reload — muat ulang dari server.
+      loadBoard().then((board) => {
+        setParticipants(board.participants);
+        setAssignments(board.assignments);
+      });
+    }
+  }
+
+  async function handleClearOffDay(id: string) {
+    const next = { ...assignments };
+    if (next[weekKey]) {
+      const week = { ...next[weekKey] };
+      delete week[id];
+      if (Object.keys(week).length === 0) delete next[weekKey];
+      else next[weekKey] = week;
+    }
+    setAssignments(next);
+    try {
+      await clearOffDay(weekKey, id, assignments);
+    } catch {
+      // Gagal hapus di Supabase: muat ulang dari server.
       loadBoard().then((board) => {
         setParticipants(board.participants);
         setAssignments(board.assignments);
@@ -245,6 +266,9 @@ export default function Home() {
             ? ` — Belum memilih: ${unchosen.map((p) => p.name).join(", ")}.`
             : ""}
       </p>
+      <p className="no-print mt-1 font-mono text-[11px] leading-relaxed text-faint">
+        Pilihan masih bisa diganti — klik PILIH di hari lain untuk pindah, klik LIBUR untuk membatalkan.
+      </p>
 
       {/* ===== Grid jadwal mingguan ===== */}
       <section className="no-print mt-5" aria-label="Jadwal minggu ini">
@@ -320,26 +344,49 @@ export default function Home() {
                       </span>
                     ))}
 
-                    {/* Jumat & Sabtu: pilih / terkunci / libur / masuk */}
+                    {/* Jumat & Sabtu: pilih / ganti / batalkan / terkunci */}
                     {(["fri", "sat"] as OffDay[]).map((day) => {
                       const locked = !allowedOffDay(prev).includes(day);
                       const selected = offDay === day;
                       const otherSelected = offDay !== undefined && offDay !== day;
                       if (selected) {
+                        // Sudah dipilih: klik untuk membatalkan pilihan.
                         return (
-                          <span
+                          <button
                             key={day}
+                            type="button"
+                            onClick={() => handleClearOffDay(p.id)}
+                            title="Klik untuk membatalkan pilihan"
                             className="bg-ink py-1.5 text-center font-mono text-[10px] font-semibold text-white"
                           >
-                            LIBUR
-                          </span>
+                            LIBUR ✕
+                          </button>
                         );
                       }
                       if (otherSelected) {
+                        // Hari ini masuk karena libur di hari satunya:
+                        // masih bisa pindah ke sini kalau aturan mengizinkan.
+                        if (locked) {
+                          return (
+                            <span
+                              key={day}
+                              title="Terkunci oleh aturan selang-seling minggu lalu"
+                              className="py-1.5 text-center font-mono text-[10px] text-faint line-through"
+                            >
+                              —
+                            </span>
+                          );
+                        }
                         return (
-                          <span key={day} className="py-1.5 text-center font-mono text-[10px] text-muted">
-                            MASUK
-                          </span>
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => selectOffDay(p.id, day)}
+                            title="Klik untuk pindah libur ke hari ini"
+                            className="border border-hairline py-1.5 text-center font-mono text-[10px] text-ink"
+                          >
+                            PILIH
+                          </button>
                         );
                       }
                       if (locked) {
@@ -417,6 +464,7 @@ export default function Home() {
         <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted">
           <li>Masuk 5 hari: Senin–Kamis selalu masuk, plus Jumat atau Sabtu.</li>
           <li>Libur Jumat berarti Sabtu masuk, dan sebaliknya.</li>
+          <li>Pilihan minggu ini masih bisa diganti atau dibatalkan — klik PILIH di hari lain untuk pindah, klik LIBUR untuk membatalkan.</li>
           <li>Kalau minggu ini libur Jumat, minggu depan hanya bisa libur Sabtu (pilihan Jumat terkunci).</li>
           <li>Roll membagi seimbang per divisi: Mobile 3/3, Web 3/3, Analyst 1/1.</li>
           <li>

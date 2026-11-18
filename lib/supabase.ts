@@ -189,6 +189,32 @@ export async function setOffDay(
   if (error) throw error;
 }
 
+export async function clearOffDay(
+  weekKey: string,
+  participantId: string,
+  assignments: Assignments
+): Promise<void> {
+  const next: Assignments = { ...assignments };
+  if (next[weekKey]) {
+    const week = { ...next[weekKey] };
+    delete week[participantId];
+    if (Object.keys(week).length === 0) delete next[weekKey];
+    else next[weekKey] = week;
+  }
+  if (!isSupabaseConfigured) {
+    saveLocalAssignments(next);
+    return;
+  }
+  const sb = getSupabase();
+  if (!sb) return;
+  const { error } = await sb
+    .from("assignments")
+    .delete()
+    .eq("participant_id", participantId)
+    .eq("week_start", weekKey);
+  if (error) throw error;
+}
+
 export async function saveWeek(
   weekKey: string,
   weekMap: Record<string, OffDay>,
