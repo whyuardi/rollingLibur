@@ -13,12 +13,86 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ---- Cetak / Export PDF: hanya jadwal yang tercetak ---- */
+/* ---- Cetak / Export PDF: hanya dokumen jadwal yang tercetak ---- */
 .print-only { display: none; }
 
 @media print {
-  body { background: #fff !important; }
+  body { background: #fff !important; font-size: 11pt; line-height: 1.45; }
   .no-print { display: none !important; }
   .print-only { display: block !important; }
-  @page { size: A4; margin: 16mm; }
+  @page { size: A4; margin: 14mm 15mm; }
+
+  .print-doc { color: #111; }
+  .print-doc .print-eyebrow {
+    font-family: var(--font-plex-mono), "IBM Plex Mono", monospace;
+    font-size: 8.5pt;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #555;
+    margin: 0;
+  }
+  .print-doc h1 {
+    font-size: 20pt;
+    line-height: 1.2;
+    font-weight: 700;
+    margin: 6pt 0 4pt;
+  }
+  .print-doc .print-meta {
+    font-size: 10.5pt;
+    color: #333;
+    border-bottom: 1.5pt solid #111;
+    padding-bottom: 8pt;
+    margin: 0 0 12pt;
+  }
+  .print-doc h2 {
+    font-size: 12pt;
+    font-weight: 700;
+    margin: 14pt 0 6pt;
+    page-break-after: avoid;
+  }
+  .print-doc table { width: 100%; border-collapse: collapse; }
+  .print-doc th,
+  .print-doc td {
+    border-bottom: 0.5pt solid #999;
+    padding: 6pt 8pt;
+    text-align: left;
+    font-size: 10.5pt;
+    vertical-align: top;
+  }
+  .print-doc thead { display: table-header-group; }
+  .print-doc thead th {
+    border-bottom: 1pt solid #111;
+    font-family: var(--font-plex-mono), "IBM Plex Mono", monospace;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .print-doc tr { page-break-inside: avoid; }
+  .print-recap { display: grid; grid-template-columns: 1fr 1fr; gap: 16pt; }
+  .print-recap h3 {
+    font-size: 11pt;
+    font-weight: 700;
+    border-bottom: 1pt solid #111;
+    padding-bottom: 3pt;
+    margin: 0 0 6pt;
+  }
+  .print-recap .print-recap-label {
+    font-family: var(--font-plex-mono), "IBM Plex Mono", monospace;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #555;
+    margin: 6pt 0 2pt;
+  }
+  .print-recap ul { list-style: none; margin: 0; padding: 0; }
+  .print-recap li { font-size: 10.5pt; padding: 1pt 0; }
+  .print-doc .print-rules { font-size: 10pt; color: #333; margin: 0; padding-left: 16pt; }
+  .print-doc .print-rules li { margin-bottom: 2pt; }
+  .print-doc .print-foot {
+    font-size: 9pt;
+    color: #666;
+    border-top: 0.5pt solid #999;
+    padding-top: 6pt;
+    margin-top: 14pt;
+  }
 }

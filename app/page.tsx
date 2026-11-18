@@ -26,9 +26,95 @@ import {
 
 const DAYS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 const DAY_NAMES = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+const DAY_LABEL: Record<OffDay, string> = { fri: "Jumat", sat: "Sabtu" };
 
-// Nama peserta + 6 kolom hari. Di HP kolom hari tetap muat tanpa scroll horizontal.
-const GRID_COLS = "minmax(92px, 1.6fr) repeat(6, minmax(34px, 1fr))";
+// Grid desktop: nama peserta + 6 kolom hari.
+const GRID_COLS = "minmax(120px, 1.6fr) repeat(6, minmax(44px, 1fr))";
+
+/** Status satu sel hari libur, dipakai grid desktop dan kartu HP. */
+type DayState = "selected" | "pick" | "move" | "locked";
+function dayState(
+  prev: OffDay | undefined,
+  offDay: OffDay | undefined,
+  day: OffDay
+): DayState {
+  if (offDay === day) return "selected";
+  if (!allowedOffDay(prev).includes(day)) return "locked";
+  return offDay === undefined ? "pick" : "move";
+}
+
+/** Nama peserta yang bisa diklik untuk mengedit. */
+function EditableName(props: {
+  p: Participant;
+  editingId: string | null;
+  draft: string;
+  onDraft: (v: string) => void;
+  onStart: (p: Participant) => void;
+  onEnd: (id: string) => void;
+  onCancel: () => void;
+  nameClassName?: string;
+  inputClassName?: string;
+}) {
+  const { p, editingId, draft, onDraft, onStart, onEnd, onCancel } = props;
+  if (editingId === p.id) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => onDraft(e.target.value)}
+        onBlur={() => onEnd(p.id)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") onCancel();
+        }}
+        className={
+          props.inputClassName ??
+          "w-full border border-ink px-1.5 py-0.5 text-[13px] outline-none"
+        }
+        aria-label="Nama peserta"
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onStart(p)}
+      className={`min-h-[44px] text-left ${props.nameClassName ?? ""}`}
+      title="Ketuk untuk mengedit nama"
+    >
+      {p.name} <span aria-hidden="true" className="text-xs text-faint">✎</span>
+    </button>
+  );
+}
+
+/** Daftar nama satu kelompok (Libur / Masuk) — satu nama per baris. */
+function PersonList(props: { label: string; people: Participant[] }) {
+  const { label, people } = props;
+  return (
+    <div>
+      <p className="font-mono text-[11px] font-semibold uppercase tracking-wide">
+        {label} ({people.length})
+      </p>
+      {people.length === 0 ? (
+        <p className="mt-1 py-1 text-sm text-faint">—</p>
+      ) : (
+        <ul className="mt-1 divide-y divide-hairline-soft">
+          {people.map((p) => (
+            <li
+              key={p.id}
+              className="flex min-h-[28px] items-baseline justify-between gap-3 py-1 text-sm"
+            >
+              <span>{p.name}</span>
+              <span className="shrink-0 font-mono text-[11px] text-faint">
+                {p.division}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
@@ -175,6 +261,20 @@ export default function Home() {
     return toKey(mondayOf(now)) === weekKey ? idx : -1;
   })();
 
+  const todayStr = new Date().toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  // Periode singkat untuk strip kop dokumen, mis. "16–21 Nov 2026".
+  const periodShort = (() => {
+    const sat = new Date(monday);
+    sat.setDate(sat.getDate() + 5);
+    const mo = sat.toLocaleDateString("id-ID", { month: "short" });
+    return `${monday.getDate()}–${sat.getDate()} ${mo} ${sat.getFullYear()}`;
+  })();
+
   if (!mounted) {
     return (
       <main className="mx-auto max-w-[860px] px-4 py-10">
@@ -185,8 +285,8 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-[860px] px-4 pb-12 pt-6 sm:px-6 sm:pt-10">
-      {/* ===== Masthead dokumen ===== */}
-      <header className="no-print border-b-2 border-ink pb-4">
+      {/* ===== Kop dokumen ===== */}
+      <header className="no-print">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
           PT Ethes Teknologi Makmur — MagangHub
         </p>
@@ -194,67 +294,100 @@ export default function Home() {
           Rolling Libur
         </h1>
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
-          Masuk 5 hari dalam seminggu. Setiap peserta libur Jumat <strong className="text-ink">atau</strong> Sabtu
-          — kalau libur Jumat, Sabtu masuk, begitu sebaliknya. Minggu ini libur Jumat, minggu depan
-          hanya bisa libur Sabtu.
+          Masuk 5 hari dalam seminggu. Setiap peserta libur Jumat{" "}
+          <strong className="text-ink">atau</strong> Sabtu — kalau libur Jumat, Sabtu
+          masuk, begitu sebaliknya. Minggu ini libur Jumat, minggu depan hanya bisa
+          libur Sabtu.
         </p>
+        {/* Strip data dokumen: periode / status / peserta */}
+        <dl className="mt-5 grid grid-cols-3 divide-x divide-hairline border-y-2 border-ink py-2.5">
+          <div className="min-w-0 px-2 first:pl-0 sm:px-4">
+            <dt className="font-mono text-[10px] uppercase tracking-wide text-faint">
+              Periode
+            </dt>
+            <dd className="mt-0.5 text-[13px] font-semibold leading-snug">
+              {periodShort}
+            </dd>
+          </div>
+          <div className="min-w-0 px-2 sm:px-4">
+            <dt className="font-mono text-[10px] uppercase tracking-wide text-faint">
+              Status
+            </dt>
+            <dd className="mt-0.5 text-[13px] font-semibold leading-snug">
+              {isFinal ? "Jadwal final" : `${chosenCount}/14 memilih`}
+            </dd>
+          </div>
+          <div className="min-w-0 px-2 sm:px-4">
+            <dt className="font-mono text-[10px] uppercase tracking-wide text-faint">
+              Peserta
+            </dt>
+            <dd className="mt-0.5 text-[13px] font-semibold leading-snug">
+              14 orang
+            </dd>
+          </div>
+        </dl>
       </header>
 
-      {/* ===== Navigasi minggu: tautan teks polos ===== */}
-      <nav className="no-print mt-4 flex items-baseline justify-between gap-2" aria-label="Navigasi minggu">
+      {/* ===== Navigasi minggu ===== */}
+      <nav
+        className="no-print mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-2"
+        aria-label="Navigasi minggu"
+      >
         <button
           type="button"
           onClick={() => setMonday((m) => addWeeks(m, -1))}
-          className="font-mono text-xs uppercase tracking-wide text-ink underline underline-offset-4"
+          className="flex min-h-[44px] items-center justify-start whitespace-nowrap px-1 text-left font-mono text-[11px] uppercase tracking-wide text-ink underline underline-offset-4 sm:text-xs"
         >
-          ← Sebelumnya
+          ‹ Sebelumnya
         </button>
-        <p className="min-w-0 text-center font-mono text-xs font-semibold sm:text-sm">
-          {weekLabel(monday)}
+        <p className="text-center font-mono text-xs font-semibold sm:text-sm">
+          {weekShort(monday)}
         </p>
         <button
           type="button"
           onClick={() => setMonday((m) => addWeeks(m, 1))}
-          className="font-mono text-xs uppercase tracking-wide text-ink underline underline-offset-4"
+          className="flex min-h-[44px] items-center justify-end whitespace-nowrap px-1 text-right font-mono text-[11px] uppercase tracking-wide text-ink underline underline-offset-4 sm:text-xs"
         >
-          Berikutnya →
+          Berikutnya ›
         </button>
       </nav>
       <div className="no-print mt-1 text-center">
         <button
           type="button"
           onClick={() => setMonday(mondayOf(new Date()))}
-          className="font-mono text-[11px] uppercase tracking-wide text-muted underline underline-offset-4"
+          className="inline-flex min-h-[44px] items-center px-2 font-mono text-[11px] uppercase tracking-wide text-muted underline underline-offset-4"
         >
           Minggu ini
         </button>
       </div>
 
       {/* ===== Aksi ===== */}
-      <div className="no-print mt-5 flex flex-wrap gap-2">
+      <div className="no-print mt-4 grid gap-2 sm:flex sm:flex-wrap">
         <button
           type="button"
           onClick={handleRoll}
-          className="bg-ink px-4 py-2.5 font-mono text-xs font-semibold uppercase tracking-wide text-white"
+          className="flex min-h-[48px] w-full items-center justify-center bg-ink px-4 font-mono text-xs font-semibold uppercase tracking-wide text-white sm:w-auto"
         >
           Roll Minggu Ini
         </button>
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={chosenCount === 0}
-          className="border border-ink bg-white px-4 py-2.5 font-mono text-xs font-semibold uppercase tracking-wide text-ink disabled:opacity-40"
-        >
-          Export PDF
-        </button>
-        <button
-          type="button"
-          onClick={handleClear}
-          disabled={chosenCount === 0}
-          className="border border-hairline bg-white px-4 py-2.5 font-mono text-xs font-semibold uppercase tracking-wide text-muted disabled:opacity-40"
-        >
-          Bersihkan
-        </button>
+        <div className="grid grid-cols-2 gap-2 sm:contents">
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={chosenCount === 0}
+            className="flex min-h-[48px] items-center justify-center border border-ink bg-white px-4 font-mono text-xs font-semibold uppercase tracking-wide text-ink disabled:opacity-40"
+          >
+            Export PDF
+          </button>
+          <button
+            type="button"
+            onClick={handleClear}
+            disabled={chosenCount === 0}
+            className="flex min-h-[48px] items-center justify-center border border-hairline bg-white px-4 font-mono text-xs font-semibold uppercase tracking-wide text-muted disabled:opacity-40"
+          >
+            Bersihkan
+          </button>
+        </div>
       </div>
 
       {/* ===== Status minggu ===== */}
@@ -263,18 +396,22 @@ export default function Home() {
         {isFinal
           ? " — Jadwal final."
           : unchosen.length > 0
-            ? ` — Belum memilih: ${unchosen.map((p) => p.name).join(", ")}.`
+            ? ` — ${unchosen.length} belum memilih.`
             : ""}
       </p>
       <p className="no-print mt-1 font-mono text-[11px] leading-relaxed text-faint">
-        Pilihan masih bisa diganti — klik PILIH di hari lain untuk pindah, klik LIBUR untuk membatalkan.
+        Pilihan masih bisa diganti — ketuk PILIH di hari lain untuk pindah, ketuk LIBUR
+        untuk membatalkan.
       </p>
 
-      {/* ===== Grid jadwal mingguan ===== */}
-      <section className="no-print mt-5" aria-label="Jadwal minggu ini">
+      {/* ===== 01 · Jadwal minggu ini — grid desktop (≥640px) ===== */}
+      <section className="no-print mt-8 hidden border-t-2 border-ink pt-4 sm:block" aria-label="Jadwal minggu ini">
+        <h2 className="font-mono text-xs font-semibold uppercase tracking-[0.14em]">
+          01 — Jadwal minggu ini
+        </h2>
         {/* Kepala kolom */}
         <div
-          className="grid items-end gap-x-1 border-b border-ink pb-1"
+          className="mt-4 grid items-end gap-x-1 border-b border-ink pb-1"
           style={{ gridTemplateColumns: GRID_COLS }}
         >
           <span className="font-mono text-[10px] font-semibold uppercase tracking-wide">Peserta</span>
@@ -297,7 +434,6 @@ export default function Home() {
           const satCount = members.filter((p) => weekMap[p.id] === "sat").length;
           return (
             <div key={div.key}>
-              {/* Subjudul divisi */}
               <p className="border-b border-hairline-soft pt-3 font-mono text-[11px] font-semibold uppercase tracking-wide">
                 {div.label} — {div.size} peserta · Jumat {friCount} / Sabtu {satCount}
               </p>
@@ -310,31 +446,16 @@ export default function Home() {
                     className="grid items-center gap-x-1 border-b border-hairline-soft py-2"
                     style={{ gridTemplateColumns: GRID_COLS }}
                   >
-                    {/* Nama (boleh membungkus dua baris di HP, tidak terpotong) */}
-                    <span className="min-w-0 break-words pr-1 text-[13px] font-medium leading-snug">
-                      {editingId === p.id ? (
-                        <input
-                          autoFocus
-                          value={draft}
-                          onChange={(e) => setDraft(e.target.value)}
-                          onBlur={() => endEdit(p.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                            if (e.key === "Escape") setEditingId(null);
-                          }}
-                          className="w-full border border-ink px-1.5 py-0.5 text-[13px] outline-none"
-                          aria-label="Nama peserta"
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => startEdit(p)}
-                          className="text-left"
-                          title="Klik untuk mengedit nama"
-                        >
-                          {p.name} <span aria-hidden="true" className="text-xs text-faint">✎</span>
-                        </button>
-                      )}
+                    <span className="min-w-0 pr-1 text-[13px] font-medium leading-snug">
+                      <EditableName
+                        p={p}
+                        editingId={editingId}
+                        draft={draft}
+                        onDraft={setDraft}
+                        onStart={startEdit}
+                        onEnd={endEdit}
+                        onCancel={() => setEditingId(null)}
+                      />
                     </span>
 
                     {/* Senin–Kamis: selalu masuk */}
@@ -344,57 +465,28 @@ export default function Home() {
                       </span>
                     ))}
 
-                    {/* Jumat & Sabtu: pilih / ganti / batalkan / terkunci */}
+                    {/* Jumat & Sabtu */}
                     {(["fri", "sat"] as OffDay[]).map((day) => {
-                      const locked = !allowedOffDay(prev).includes(day);
-                      const selected = offDay === day;
-                      const otherSelected = offDay !== undefined && offDay !== day;
-                      if (selected) {
-                        // Sudah dipilih: klik untuk membatalkan pilihan.
+                      const state = dayState(prev, offDay, day);
+                      if (state === "selected") {
                         return (
                           <button
                             key={day}
                             type="button"
                             onClick={() => handleClearOffDay(p.id)}
-                            title="Klik untuk membatalkan pilihan"
-                            className="bg-ink py-1.5 text-center font-mono text-[10px] font-semibold text-white"
+                            title="Ketuk untuk membatalkan pilihan"
+                            className="flex min-h-[44px] items-center justify-center bg-ink px-1 text-center font-mono text-[10px] font-semibold text-white"
                           >
                             LIBUR ✕
                           </button>
                         );
                       }
-                      if (otherSelected) {
-                        // Hari ini masuk karena libur di hari satunya:
-                        // masih bisa pindah ke sini kalau aturan mengizinkan.
-                        if (locked) {
-                          return (
-                            <span
-                              key={day}
-                              title="Terkunci oleh aturan selang-seling minggu lalu"
-                              className="py-1.5 text-center font-mono text-[10px] text-faint line-through"
-                            >
-                              —
-                            </span>
-                          );
-                        }
-                        return (
-                          <button
-                            key={day}
-                            type="button"
-                            onClick={() => selectOffDay(p.id, day)}
-                            title="Klik untuk pindah libur ke hari ini"
-                            className="border border-hairline py-1.5 text-center font-mono text-[10px] text-ink"
-                          >
-                            PILIH
-                          </button>
-                        );
-                      }
-                      if (locked) {
+                      if (state === "locked") {
                         return (
                           <span
                             key={day}
                             title="Terkunci oleh aturan selang-seling minggu lalu"
-                            className="py-1.5 text-center font-mono text-[10px] text-faint line-through"
+                            className="flex min-h-[44px] items-center justify-center text-center font-mono text-[10px] text-faint line-through"
                           >
                             —
                           </span>
@@ -405,7 +497,8 @@ export default function Home() {
                           key={day}
                           type="button"
                           onClick={() => selectOffDay(p.id, day)}
-                          className="border border-hairline py-1.5 text-center font-mono text-[10px] text-ink"
+                          title={state === "move" ? "Ketuk untuk pindah libur ke hari ini" : undefined}
+                          className="flex min-h-[44px] items-center justify-center border border-hairline px-1 text-center font-mono text-[10px] text-ink"
                         >
                           PILIH
                         </button>
@@ -419,16 +512,113 @@ export default function Home() {
         })}
       </section>
 
-      {/* ===== Daftar Libur & Masuk: daftar teks ===== */}
+      {/* ===== 01 · Jadwal minggu ini — kartu HP (<640px) ===== */}
+      <section className="no-print mt-8 border-t-2 border-ink pt-4 sm:hidden" aria-label="Jadwal minggu ini">
+        <h2 className="font-mono text-xs font-semibold uppercase tracking-[0.14em]">
+          01 — Jadwal minggu ini
+        </h2>
+        <p className="mt-2 text-[13px] leading-relaxed text-muted">
+          Senin–Kamis semua masuk. Pilih hari libur Jumat atau Sabtu di bawah ini.
+        </p>
+        {DIVISIONS.map((div) => {
+          const members = participants.filter((p) => p.division === div.key);
+          const friCount = members.filter((p) => weekMap[p.id] === "fri").length;
+          const satCount = members.filter((p) => weekMap[p.id] === "sat").length;
+          return (
+            <div key={div.key} className="mt-5">
+              <p className="border-b border-ink pb-1 text-[13px] font-semibold leading-snug">
+                {div.label}
+              </p>
+              <p className="mt-1 font-mono text-[11px] text-muted">
+                {div.size} peserta · Jumat {friCount} · Sabtu {satCount}
+              </p>
+              {members.map((p) => {
+                const offDay = weekMap[p.id];
+                const prev = prevMap[p.id];
+                return (
+                  <div key={p.id} className="border-b border-hairline-soft py-3">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 text-[15px] font-medium leading-snug">
+                        <EditableName
+                          p={p}
+                          editingId={editingId}
+                          draft={draft}
+                          onDraft={setDraft}
+                          onStart={startEdit}
+                          onEnd={endEdit}
+                          onCancel={() => setEditingId(null)}
+                          inputClassName="w-full border border-ink px-2 py-1 text-[15px] outline-none"
+                        />
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] text-muted">
+                        {offDay
+                          ? `Libur ${DAY_LABEL[offDay]}`
+                          : "Belum memilih"}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 font-mono text-[11px] leading-relaxed text-faint">
+                      Senin–Kamis: masuk
+                      {prev ? ` · Minggu lalu libur ${DAY_LABEL[prev]}` : ""}
+                    </p>
+                    <div className="mt-2.5 grid grid-cols-2 gap-2">
+                      {(["fri", "sat"] as OffDay[]).map((day) => {
+                        const state = dayState(prev, offDay, day);
+                        const label = DAY_LABEL[day];
+                        if (state === "selected") {
+                          return (
+                            <button
+                              key={day}
+                              type="button"
+                              onClick={() => handleClearOffDay(p.id)}
+                              className="flex min-h-[48px] items-center justify-center bg-ink px-2 text-center font-mono text-xs font-semibold text-white"
+                            >
+                              {label} — Libur ✕
+                            </button>
+                          );
+                        }
+                        if (state === "locked") {
+                          return (
+                            <span
+                              key={day}
+                              title="Terkunci oleh aturan selang-seling minggu lalu"
+                              className="flex min-h-[48px] items-center justify-center border border-hairline px-2 text-center font-mono text-xs text-faint"
+                            >
+                              {label} — Terkunci
+                            </span>
+                          );
+                        }
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => selectOffDay(p.id, day)}
+                            className="flex min-h-[48px] items-center justify-center border border-ink bg-white px-2 text-center font-mono text-xs font-semibold text-ink"
+                          >
+                            {label} — {state === "move" ? "Pindah ke sini" : "Pilih libur"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </section>
+
+      {/* ===== 02 · Daftar Libur & Masuk ===== */}
       <section className="no-print mt-8 border-t-2 border-ink pt-4" aria-label="Daftar libur dan masuk">
-        <h2 className="text-lg font-bold tracking-tight">Daftar Libur &amp; Masuk</h2>
+        <h2 className="font-mono text-xs font-semibold uppercase tracking-[0.14em]">
+          02 — Daftar libur &amp; masuk
+        </h2>
         {!isFinal && unchosen.length > 0 && (
-          <p className="mt-1 text-sm text-muted">
-            Belum lengkap — {unchosen.length} peserta belum memilih: {unchosen.map((p) => p.name).join(", ")}.
+          <p className="mt-2 text-sm text-muted">
+            Belum lengkap — {unchosen.length} peserta belum memilih.
           </p>
         )}
         {isFinal && (
-          <p className="mt-1 font-mono text-xs font-semibold uppercase tracking-wide">
+          <p className="mt-2 font-mono text-xs font-semibold uppercase tracking-wide">
             Jadwal final — semua peserta sudah memilih.
           </p>
         )}
@@ -438,33 +628,27 @@ export default function Home() {
             { title: "Sabtu", off: satOff, on: satOn },
           ].map(({ title, off, on }) => (
             <div key={title}>
-              <h3 className="font-mono text-xs font-semibold uppercase tracking-wide">
+              <h3 className="border-b border-ink pb-1 text-[13px] font-semibold">
                 {title} — Libur {off.length} · Masuk {on.length}
               </h3>
-              <p className="mt-2 text-sm leading-relaxed">
-                <span className="font-mono text-[11px] font-semibold uppercase tracking-wide">Libur: </span>
-                {off.length === 0
-                  ? "—"
-                  : off.map((p) => `${p.name} (${p.division})`).join(", ")}
-              </p>
-              <p className="mt-1 text-sm leading-relaxed">
-                <span className="font-mono text-[11px] font-semibold uppercase tracking-wide">Masuk: </span>
-                {on.length === 0
-                  ? "—"
-                  : on.map((p) => `${p.name} (${p.division})`).join(", ")}
-              </p>
+              <div className="mt-3 grid gap-4">
+                <PersonList label="Libur" people={off} />
+                <PersonList label="Masuk" people={on} />
+              </div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* ===== Aturan ===== */}
+      {/* ===== 03 · Aturan ===== */}
       <details className="no-print mt-8 border-t border-hairline pt-4">
-        <summary className="cursor-pointer text-sm font-semibold">Aturan rolling</summary>
+        <summary className="flex min-h-[44px] cursor-pointer items-center text-sm font-semibold">
+          03 — Aturan rolling
+        </summary>
         <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted">
           <li>Masuk 5 hari: Senin–Kamis selalu masuk, plus Jumat atau Sabtu.</li>
           <li>Libur Jumat berarti Sabtu masuk, dan sebaliknya.</li>
-          <li>Pilihan minggu ini masih bisa diganti atau dibatalkan — klik PILIH di hari lain untuk pindah, klik LIBUR untuk membatalkan.</li>
+          <li>Pilihan minggu ini masih bisa diganti atau dibatalkan — ketuk PILIH di hari lain untuk pindah, ketuk LIBUR untuk membatalkan.</li>
           <li>Kalau minggu ini libur Jumat, minggu depan hanya bisa libur Sabtu (pilihan Jumat terkunci).</li>
           <li>Roll membagi seimbang per divisi: Mobile 3/3, Web 3/3, Analyst 1/1.</li>
           <li>
@@ -474,42 +658,96 @@ export default function Home() {
       </details>
 
       {/* ===== Versi cetak / PDF (hanya saat print) ===== */}
-      <div className="print-only">
-        <h1 style={{ fontSize: 22, fontWeight: 700 }}>Rolling Libur MagangHub</h1>
-        <p>PT Ethes Teknologi Makmur · MagangHub</p>
-        <p>
+      <div className="print-only print-doc">
+        <p className="print-eyebrow">PT Ethes Teknologi Makmur — MagangHub</p>
+        <h1>Rolling Libur MagangHub</h1>
+        <p className="print-meta">
           Minggu {weekLabel(monday)} · {isFinal ? "Jadwal final" : "Sementara"} ·{" "}
           {chosenCount}/{participants.length} sudah memilih
         </p>
-        <hr />
-        <h2>Jumat — Libur ({friOff.length}) / Masuk ({friOn.length})</h2>
-        <p><strong>Libur:</strong> {friOff.map((p) => `${p.name} (${p.division})`).join(", ") || "-"}</p>
-        <p><strong>Masuk:</strong> {friOn.map((p) => `${p.name} (${p.division})`).join(", ") || "-"}</p>
-        <h2>Sabtu — Libur ({satOff.length}) / Masuk ({satOn.length})</h2>
-        <p><strong>Libur:</strong> {satOff.map((p) => `${p.name} (${p.division})`).join(", ") || "-"}</p>
-        <p><strong>Masuk:</strong> {satOn.map((p) => `${p.name} (${p.division})`).join(", ") || "-"}</p>
-        <h2>Rincian per Peserta</h2>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+
+        <h2>1. Rekap libur &amp; masuk</h2>
+        <div className="print-recap">
+          {[
+            { title: "Jumat", off: friOff, on: friOn },
+            { title: "Sabtu", off: satOff, on: satOn },
+          ].map(({ title, off, on }) => (
+            <div key={title}>
+              <h3>
+                {title} — Libur {off.length} · Masuk {on.length}
+              </h3>
+              <p className="print-recap-label">Libur</p>
+              <ul>
+                {off.length === 0 ? (
+                  <li>—</li>
+                ) : (
+                  off.map((p) => (
+                    <li key={p.id}>
+                      {p.name} ({p.division})
+                    </li>
+                  ))
+                )}
+              </ul>
+              <p className="print-recap-label">Masuk</p>
+              <ul>
+                {on.length === 0 ? (
+                  <li>—</li>
+                ) : (
+                  on.map((p) => (
+                    <li key={p.id}>
+                      {p.name} ({p.division})
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        <h2>2. Rincian per peserta</h2>
+        <table>
           <thead>
             <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #999" }}>Nama</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #999" }}>Divisi</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #999" }}>Hari Libur</th>
+              <th>No.</th>
+              <th>Nama</th>
+              <th>Divisi</th>
+              <th>Senin–Kamis</th>
+              <th>Jumat</th>
+              <th>Sabtu</th>
+              <th>Hari libur</th>
             </tr>
           </thead>
           <tbody>
-            {participants.map((p) => (
+            {participants.map((p, i) => (
               <tr key={p.id}>
+                <td>{i + 1}</td>
                 <td>{p.name}</td>
                 <td>{p.division}</td>
-                <td>{weekMap[p.id] === "fri" ? "Jumat" : weekMap[p.id] === "sat" ? "Sabtu" : "Belum memilih"}</td>
+                <td>Masuk</td>
+                <td>{weekMap[p.id] === "fri" ? "Libur" : "Masuk"}</td>
+                <td>{weekMap[p.id] === "sat" ? "Libur" : "Masuk"}</td>
+                <td>
+                  {weekMap[p.id] === "fri"
+                    ? "Jumat"
+                    : weekMap[p.id] === "sat"
+                      ? "Sabtu"
+                      : "Belum memilih"}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p style={{ fontSize: 12, color: "#666" }}>
-          Aturan: masuk 5 hari; libur Jumat berarti Sabtu masuk dan sebaliknya; minggu ini libur
-          Jumat, minggu depan hanya bisa libur Sabtu.
+
+        <h2>3. Aturan</h2>
+        <ol className="print-rules">
+          <li>Masuk 5 hari: Senin–Kamis selalu masuk, plus Jumat atau Sabtu.</li>
+          <li>Libur Jumat berarti Sabtu masuk, dan sebaliknya.</li>
+          <li>Kalau minggu ini libur Jumat, minggu depan hanya bisa libur Sabtu.</li>
+          <li>Roll membagi seimbang per divisi: Mobile 3/3, Web 3/3, Analyst 1/1.</li>
+          <li>Reload tidak hilang; ganti minggu tidak menghapus minggu sebelumnya.</li>
+        </ol>
+        <p className="print-foot">
+          Dicetak pada {todayStr} · Dokumen jadwal mingguan MagangHub.
         </p>
       </div>
     </main>
