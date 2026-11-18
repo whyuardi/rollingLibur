@@ -4,11 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   addWeeks,
   allowedOffDay,
-  ASSIGNMENTS_KEY,
   DEFAULT_PARTICIPANTS,
   DIVISIONS,
   mondayOf,
-  PARTICIPANTS_KEY,
   rollWeek,
   toKey,
   weekLabel,
@@ -17,6 +15,14 @@ import {
   type OffDay,
   type Participant,
 } from "../lib/schedule";
+import {
+  clearWeek,
+  loadBoard,
+  renameParticipant,
+  saveWeek,
+  setOffDay,
+  type DataSource,
+} from "../lib/supabase";
 
 const DAYS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 const DAY_NAMES = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
@@ -28,6 +34,7 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>(DEFAULT_PARTICIPANTS);
   const [assignments, setAssignments] = useState<Assignments>({});
+  const [source, setSource] = useState<DataSource>("local");
   const [monday, setMonday] = useState<Date>(() => mondayOf(new Date()));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -35,38 +42,25 @@ export default function Home() {
   const weekKey = toKey(monday);
   const prevKey = toKey(addWeeks(monday, -1));
 
-  // Muat dari localStorage (sekali, setelah mount agar tidak bentrok SSR).
+  // Muat dari Supabase kalau env diisi, kalau tidak fallback ke
+  // localStorage (sekali, setelah mount agar tidak bentrok SSR).
   useEffect(() => {
-    try {
-      const p = localStorage.getItem(PARTICIPANTS_KEY);
-      if (p) {
-        const parsed = JSON.parse(p) as Participant[];
-        if (Array.isArray(parsed) && parsed.length === 14) setParticipants(parsed);
-      }
-      const a = localStorage.getItem(ASSIGNMENTS_KEY);
-      if (a) {
-        const parsed = JSON.parse(a) as Assignments;
-        if (parsed && typeof parsed === "object") setAssignments(parsed);
-      }
-    } catch {
-      // localStorage rusak / tidak tersedia: pakai data default.
-    }
-    setMounted(true);
+    let cancelled = false;
+    loadBoard()
+      .then((board) => {
+        if (cancelled) return;
+        setParticipants(board.participants);
+        setAssignments(board.assignments);
+        setSource(board.source);
+        setMounted(true);
+      })
+      .catch(() => {
+        if (!cancelled) setMounted(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  useEffect(() => {
-    if (!mounted) return;
-    try {
-      localStorage.setItem(PARTICIPANTS_KEY, JSON.stringify(participants));
-    } catch { /* abaikan */ }
-  }, [participants, mounted]);
-
-  useEffect(() => {
-    if (!mounted) return;
-    try {
-      localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments));
-    } catch { /* abaikan */ }
-  }, [assignments, mounted]);
 
   const weekMap = assignments[weekKey] ?? {};
   const prevMap = assignments[prevKey] ?? {};
@@ -83,21 +77,41 @@ export default function Home() {
   const satOn = participants.filter((p) => weekMap[p.id] === "fri");
   const unchosen = participants.filter((p) => !weekMap[p.id]);
 
-  function selectOffDay(id: string, day: OffDay) {
+  async function selectOffDay(id: string, day: OffDay) {
     const prev = prevMap[id];
     if (!allowedOffDay(prev).includes(day)) return; // terkunci aturan selang-seling
-    setAssignments((prevAll) => ({
-      ...prevAll,
-      [weekKey]: { ...(prevAll[weekKey] ?? {}), [id]: day },
-    }));
+    const next = {
+      ...assignments,
+      [weekKey]: { ...(assignments[weekKey] ?? {}), [id]: day },
+    };
+    setAssignments(next);
+    try {
+      await setOffDay(weekKey, id, day, assignments);
+    } catch {
+      // Gagal simpan ke Supabase: tampilan minggu ini tetap, tapi
+      // perubahan bisa hilang saat reload — muat ulang dari server.
+      loadBoard().then((board) => {
+        setParticipants(board.participants);
+        setAssignments(board.assignments);
+        setSource(board.source);
+      });
+    }
   }
 
-  function handleRoll() {
+  async function handleRoll() {
     const rolled = rollWeek(participants, prevMap);
     setAssignments((prevAll) => ({ ...prevAll, [weekKey]: rolled }));
+    try {
+      await saveWeek(weekKey, rolled, assignments);
+    } catch {
+      loadBoard().then((board) => {
+        setAssignments(board.assignments);
+        setSource(board.source);
+      });
+    }
   }
 
-  function handleClear() {
+  async function handleClear() {
     if (Object.keys(weekMap).length === 0) return;
     if (!window.confirm(`Hapus jadwal minggu ${weekShort(monday)} saja? Minggu lain tidak ikut terhapus.`)) return;
     setAssignments((prevAll) => {
@@ -105,14 +119,30 @@ export default function Home() {
       delete next[weekKey];
       return next;
     });
+    try {
+      await clearWeek(weekKey, assignments);
+    } catch {
+      loadBoard().then((board) => {
+        setAssignments(board.assignments);
+        setSource(board.source);
+      });
+    }
   }
 
   function handleExport() {
     window.print();
   }
 
-  function rename(id: string, name: string) {
+  async function rename(id: string, name: string) {
     setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
+    try {
+      await renameParticipant(id, name, participants);
+    } catch {
+      loadBoard().then((board) => {
+        setParticipants(board.participants);
+        setSource(board.source);
+      });
+    }
   }
 
   function startEdit(p: Participant) {
@@ -396,12 +426,20 @@ export default function Home() {
           <li>Libur Jumat berarti Sabtu masuk, dan sebaliknya.</li>
           <li>Kalau minggu ini libur Jumat, minggu depan hanya bisa libur Sabtu (pilihan Jumat terkunci).</li>
           <li>Roll membagi seimbang per divisi: Mobile 3/3, Web 3/3, Analyst 1/1.</li>
-          <li>Data tersimpan di perangkat ini (localStorage) per minggu — reload tidak hilang, ganti minggu tidak menghapus minggu sebelumnya. Tombol Bersihkan hanya menghapus minggu yang sedang tampil.</li>
+          <li>
+            Data tersimpan{" "}
+            {source === "supabase"
+              ? "di Supabase — sama di semua perangkat. Reload tidak hilang, ganti minggu tidak menghapus minggu sebelumnya."
+              : "di perangkat ini (localStorage) karena database Supabase belum disambungkan — reload tidak hilang, ganti minggu tidak menghapus minggu sebelumnya. Tombol Bersihkan hanya menghapus minggu yang sedang tampil."}
+          </li>
         </ul>
       </details>
 
       <footer className="no-print mt-8 border-t border-hairline pt-3 font-mono text-[11px] text-faint">
-        Rolling Libur MagangHub · PT Ethes Teknologi Makmur · Data tersimpan lokal di perangkat ini.
+        Rolling Libur MagangHub · PT Ethes Teknologi Makmur ·{" "}
+        {source === "supabase"
+          ? "Data tersimpan di Supabase — sama di semua perangkat."
+          : "Data tersimpan lokal di perangkat ini — sambungkan Supabase (.env.local) agar sama di semua perangkat."}
       </footer>
 
       {/* ===== Versi cetak / PDF (hanya saat print) ===== */}

@@ -32,8 +32,27 @@ langsung di web lewat ikon pensil di samping nama.
 - Tombol **Export PDF** — memakai `window.print()` + stylesheet `@media print`,
   hasil cetaknya hanya berisi kop, rentang minggu, daftar libur/masuk, dan tabel rincian
 - Tombol **Bersihkan** — menghapus jadwal minggu yang sedang tampil saja (dengan konfirmasi)
-- Data tersimpan di `localStorage` per minggu, jadi reload tidak hilang dan ganti minggu
-  tidak menghapus minggu sebelumnya. Tidak ada server / database.
+- Data tersimpan di **Supabase (Postgres)** kalau `.env.local` diisi, jadi jadwalnya
+  sama di semua perangkat. Tanpa `.env`, web fallback ke `localStorage` per minggu
+  (reload tidak hilang, ganti minggu tidak menghapus minggu sebelumnya), seperti
+  sebelumnya. Tidak ada server sendiri yang perlu dijalankan.
+
+## Setup Supabase (database)
+
+1. Buat proyek gratis di [supabase.com](https://supabase.com) (Dashboard → New project).
+2. Buka **SQL Editor** di dashboard proyek, lalu jalankan seluruh isi file
+   `supabase/schema.sql` — ini membuat tabel `participants` dan `assignments`
+   (plus 14 peserta placeholder) dan mengaktifkan Row Level Security.
+3. Buka **Project Settings → API**, copy **Project URL** dan **anon public key**.
+4. Di repo ini, copy `.env.example` menjadi `.env.local` lalu isi:
+   ```bash
+   NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
+   ```
+   Jangan pernah commit `.env.local` — file itu sudah ada di `.gitignore`.
+   Kunci `anon` memang dirancang untuk dipakai di client; policy di `schema.sql`
+   membuka akses baca/tulis untuk proyek internal kecil tanpa login ini. Kalau
+   nanti butuh pembatasan, tambahkan Supabase Auth dan ketatkan policy-nya.
 
 ## Cara menjalankan
 
@@ -55,11 +74,15 @@ npm start
 
 1. Push repo ini ke GitHub.
 2. Di Vercel: **Add New → Project → Import** repo ini.
-3. Framework terdeteksi otomatis sebagai Next.js. Tidak perlu environment variable.
+3. Framework terdeteksi otomatis sebagai Next.js. Di **Environment Variables** isi:
+   `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_ANON_KEY` (dari
+   Supabase Project Settings → API) — tanpa ini web jalan dengan localStorage
+   per perangkat, bukan database bersama.
 4. Klik **Deploy**.
 
 ## Teknologi
 
-Next.js 14 (App Router) · React 18 · TypeScript · Tailwind CSS · desain lembar
-roster cetak yang tipografis (garis hairline, tanpa kartu/avatar/chip warna,
-font IBM Plex Sans + IBM Plex Mono).
+Next.js 14 (App Router) · React 18 · TypeScript · Tailwind CSS · Supabase
+(Postgres, `@supabase/supabase-js`) · desain lembar roster cetak yang
+tipografis (garis hairline, tanpa kartu/avatar/chip warna, font IBM Plex
+Sans + IBM Plex Mono).
