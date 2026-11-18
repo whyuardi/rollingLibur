@@ -497,7 +497,7 @@ export default function Home() {
                           key={day}
                           type="button"
                           onClick={() => selectOffDay(p.id, day)}
-                          title={state === "move" ? "Ketuk untuk pindah libur ke hari ini" : undefined}
+                          title={state === "move" ? "Ketuk untuk memilih hari ini" : undefined}
                           className="flex min-h-[44px] items-center justify-center border border-hairline px-1 text-center font-mono text-[10px] text-ink"
                         >
                           PILIH
@@ -594,7 +594,7 @@ export default function Home() {
                             onClick={() => selectOffDay(p.id, day)}
                             className="flex min-h-[48px] items-center justify-center border border-ink bg-white px-2 text-center font-mono text-xs font-semibold text-ink"
                           >
-                            {label} — {state === "move" ? "Pindah ke sini" : "Pilih libur"}
+                            {label} — Pilih libur
                           </button>
                         );
                       })}
