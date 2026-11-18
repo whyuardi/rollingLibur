@@ -21,7 +21,6 @@ import {
   renameParticipant,
   saveWeek,
   setOffDay,
-  type DataSource,
 } from "../lib/supabase";
 
 const DAYS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
@@ -34,7 +33,6 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>(DEFAULT_PARTICIPANTS);
   const [assignments, setAssignments] = useState<Assignments>({});
-  const [source, setSource] = useState<DataSource>("local");
   const [monday, setMonday] = useState<Date>(() => mondayOf(new Date()));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -51,7 +49,6 @@ export default function Home() {
         if (cancelled) return;
         setParticipants(board.participants);
         setAssignments(board.assignments);
-        setSource(board.source);
         setMounted(true);
       })
       .catch(() => {
@@ -93,7 +90,6 @@ export default function Home() {
       loadBoard().then((board) => {
         setParticipants(board.participants);
         setAssignments(board.assignments);
-        setSource(board.source);
       });
     }
   }
@@ -106,7 +102,6 @@ export default function Home() {
     } catch {
       loadBoard().then((board) => {
         setAssignments(board.assignments);
-        setSource(board.source);
       });
     }
   }
@@ -124,7 +119,6 @@ export default function Home() {
     } catch {
       loadBoard().then((board) => {
         setAssignments(board.assignments);
-        setSource(board.source);
       });
     }
   }
@@ -140,7 +134,6 @@ export default function Home() {
     } catch {
       loadBoard().then((board) => {
         setParticipants(board.participants);
-        setSource(board.source);
       });
     }
   }
@@ -427,20 +420,10 @@ export default function Home() {
           <li>Kalau minggu ini libur Jumat, minggu depan hanya bisa libur Sabtu (pilihan Jumat terkunci).</li>
           <li>Roll membagi seimbang per divisi: Mobile 3/3, Web 3/3, Analyst 1/1.</li>
           <li>
-            Data tersimpan{" "}
-            {source === "supabase"
-              ? "di Supabase — sama di semua perangkat. Reload tidak hilang, ganti minggu tidak menghapus minggu sebelumnya."
-              : "di perangkat ini (localStorage) karena database Supabase belum disambungkan — reload tidak hilang, ganti minggu tidak menghapus minggu sebelumnya. Tombol Bersihkan hanya menghapus minggu yang sedang tampil."}
+            Reload tidak hilang, ganti minggu tidak menghapus minggu sebelumnya. Tombol Bersihkan hanya menghapus minggu yang sedang tampil.
           </li>
         </ul>
       </details>
-
-      <footer className="no-print mt-8 border-t border-hairline pt-3 font-mono text-[11px] text-faint">
-        Rolling Libur MagangHub · PT Ethes Teknologi Makmur ·{" "}
-        {source === "supabase"
-          ? "Data tersimpan di Supabase — sama di semua perangkat."
-          : "Data tersimpan lokal di perangkat ini — sambungkan Supabase (.env.local) agar sama di semua perangkat."}
-      </footer>
 
       {/* ===== Versi cetak / PDF (hanya saat print) ===== */}
       <div className="print-only">
